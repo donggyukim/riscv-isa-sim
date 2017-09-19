@@ -47,4 +47,10 @@ class rtc_t : public abstract_device_t {
   uint64_t time() { return regs[0]; }
 };
 
+class uart_dev_t : public abstract_device_t {
+ public:
+  uart_dev_t() { }
+  bool load(reg_t addr, size_t len, uint8_t* bytes);
+  bool store(reg_t addr, size_t len, const uint8_t* bytes);
+};
 #endif
