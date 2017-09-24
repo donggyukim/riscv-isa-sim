@@ -107,8 +107,7 @@ void sim_t::step(size_t n)
         current_proc = 0;
         rtc->increment(INTERLEAVE / INSNS_PER_RTC_TICK);
       }
-
-      host->switch_to();
+      wait();
     }
   }
 }
@@ -121,6 +120,13 @@ void sim_t::set_debug(bool value)
 void sim_t::set_log(bool value)
 {
   log = value;
+}
+
+void sim_t::set_lockstep(bool value)
+{
+  for (size_t i = 0; i < procs.size(); i++) {
+    procs[i]->set_lockstep(value);
+  }
 }
 
 void sim_t::set_histogram(bool value)
@@ -217,6 +223,11 @@ void sim_t::make_config_string()
 }
 
 // htif
+
+void sim_t::wait()
+{
+  host->switch_to();
+}
 
 void sim_t::idle()
 {

@@ -134,10 +134,16 @@ struct state_t
 
   reg_t load_reservation;
 
-#ifdef RISCV_ENABLE_COMMITLOG
+// #ifdef RISCV_ENABLE_COMMITLOG
   commit_log_reg_t log_reg_write;
   reg_t last_inst_priv;
-#endif
+// #endif
+  reg_t log_reg_pc;
+  reg_t log_reg_insn;
+
+  // For locksteps
+  bool interrupt;
+  reg_t interrupt_cause;
 };
 
 typedef enum {
@@ -163,6 +169,7 @@ public:
   ~processor_t();
 
   void set_debug(bool value);
+  void set_lockstep(bool value);
   void set_histogram(bool value);
   void reset();
   void step(size_t n); // run for n cycles
@@ -288,6 +295,7 @@ private:
   reg_t isa;
   reg_t max_isa;
   std::string isa_string;
+  bool lockstep;
   bool histogram_enabled;
   bool halt_on_reset;
 

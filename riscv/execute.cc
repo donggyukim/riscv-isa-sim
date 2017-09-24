@@ -8,16 +8,16 @@
 
 static void commit_log_stash_privilege(state_t* state)
 {
-#ifdef RISCV_ENABLE_COMMITLOG
+// #ifdef RISCV_ENABLE_COMMITLOG
   state->last_inst_priv = state->prv;
-#endif
+// #endif
 }
 
 static void commit_log_print_insn(state_t* state, reg_t pc, insn_t insn)
 {
+  uint64_t mask = (insn.length() == 8 ? uint64_t(0) : (uint64_t(1) << (insn.length() * 8))) - 1;
 #ifdef RISCV_ENABLE_COMMITLOG
   int32_t priv = state->last_inst_priv;
-  uint64_t mask = (insn.length() == 8 ? uint64_t(0) : (uint64_t(1) << (insn.length() * 8))) - 1;
   if (state->log_reg_write.addr) {
     fprintf(stderr, "%1d 0x%016" PRIx64 " (0x%08" PRIx64 ") %c%2" PRIu64 " 0x%016" PRIx64 "\n",
             priv,
@@ -30,6 +30,9 @@ static void commit_log_print_insn(state_t* state, reg_t pc, insn_t insn)
     fprintf(stderr, "%1d 0x%016" PRIx64 " (0x%08" PRIx64 ")\n", priv, pc, insn.bits() & mask);
   }
   state->log_reg_write.addr = 0;
+#else
+  state->log_reg_pc   = pc;
+  state->log_reg_insn = insn.bits() & mask;
 #endif
 }
 
@@ -96,7 +99,12 @@ void processor_t::step(size_t n)
 
     try
     {
-      take_interrupt();
+      if (!lockstep) {
+        take_interrupt();
+      } else if (state.interrupt) {
+        state.interrupt = false;
+        raise_interrupt(state.interrupt_cause);
+      }
 
       if (unlikely(slow_path()))
       {
@@ -195,6 +203,7 @@ miss:
         state.single_step = state.STEP_NONE;
         enter_debug_mode(DCSR_CAUSE_STEP);
       }
+      if (lockstep) step(1);
     }
     catch (trigger_matched_t& t)
     {

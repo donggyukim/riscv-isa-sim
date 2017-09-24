@@ -123,6 +123,8 @@ void state_t::reset()
   tselect = 0;
   for (unsigned int i = 0; i < num_triggers; i++)
     mcontrol[i].type = 2;
+  // for locksteps
+  interrupt = false;
 }
 
 void processor_t::set_debug(bool value)
@@ -130,6 +132,11 @@ void processor_t::set_debug(bool value)
   debug = value;
   if (ext)
     ext->set_debug(value);
+}
+
+void processor_t::set_lockstep(bool value)
+{
+  lockstep = value;
 }
 
 void processor_t::set_histogram(bool value)

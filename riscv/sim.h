@@ -27,11 +27,15 @@ public:
   int run();
   void set_debug(bool value);
   void set_log(bool value);
+  void set_lockstep(bool value);
   void set_histogram(bool value);
   void set_procs_debug(bool value);
   void set_gdbserver(gdbserver_t* gdbserver) { this->gdbserver = gdbserver; }
   const char* get_config_string() { return config_string.c_str(); }
   processor_t* get_core(size_t i) { return procs.at(i); }
+  processor_t* current_core() { return procs[current_proc]; }
+
+  void step(size_t n); // step through simulation
 
 private:
   char* mem; // main memory
@@ -46,7 +50,6 @@ private:
   debug_module_t debug_module;
 
   processor_t* get_core(const std::string& i);
-  void step(size_t n); // step through simulation
   static const size_t INTERLEAVE = 5000;
   static const size_t INSNS_PER_RTC_TICK = 100; // 10 MHz clock for 1 BIPS core
   size_t current_step;
@@ -99,6 +102,7 @@ private:
   context_t target;
   void reset() { }
   void idle();
+  virtual void wait();
   void read_chunk(addr_t taddr, size_t len, void* dst);
   void write_chunk(addr_t taddr, size_t len, const void* src);
   size_t chunk_align() { return 8; }

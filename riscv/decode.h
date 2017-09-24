@@ -128,10 +128,10 @@ private:
 #define RS2 READ_REG(insn.rs2())
 #define WRITE_RD(value) WRITE_REG(insn.rd(), value)
 
-#ifndef RISCV_ENABLE_COMMITLOG
-# define WRITE_REG(reg, value) STATE.XPR.write(reg, value)
-# define WRITE_FREG(reg, value) DO_WRITE_FREG(reg, value)
-#else
+// #ifndef RISCV_ENABLE_COMMITLOG
+// # define WRITE_REG(reg, value) STATE.XPR.write(reg, value)
+// # define WRITE_FREG(reg, value) DO_WRITE_FREG(reg, value)
+// #else
 # define WRITE_REG(reg, value) ({ \
     reg_t wdata = (value); /* value may have side effects */ \
     STATE.log_reg_write = (commit_log_reg_t){(reg) << 1, wdata}; \
@@ -142,7 +142,7 @@ private:
     STATE.log_reg_write = (commit_log_reg_t){((reg) << 1) | 1, wdata}; \
     DO_WRITE_FREG(reg, wdata); \
   })
-#endif
+// #endif
 
 // RVC macros
 #define WRITE_RVC_RS1S(value) WRITE_REG(insn.rvc_rs1s(), value)
