@@ -327,6 +327,11 @@ void processor_t::set_csr(int which, reg_t val)
 
       state.mstatus = (state.mstatus & ~mask) | (val & mask);
 
+      // Donggyu: this is what rocketchip does...
+      if (val & MSTATUS_FS) {
+        state.mstatus |= MSTATUS_FS;
+      }
+
       bool dirty = (state.mstatus & MSTATUS_FS) == MSTATUS_FS;
       dirty |= (state.mstatus & MSTATUS_XS) == MSTATUS_XS;
       if (max_xlen == 32)
