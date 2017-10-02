@@ -127,6 +127,7 @@ void sim_t::set_lockstep(bool value)
   for (size_t i = 0; i < procs.size(); i++) {
     procs[i]->set_lockstep(value);
   }
+  uart->set_print(false);
 }
 
 void sim_t::set_histogram(bool value)
@@ -160,7 +161,7 @@ bool sim_t::mmio_store(reg_t addr, size_t len, const uint8_t* bytes)
 void sim_t::make_config_string()
 {
   reg_t rtc_addr = EXT_IO_BASE;
-  reg_t uart_addr = EXT_IO_BASE + 0x10000000;
+  reg_t uart_addr = EXT_IO_BASE + 0x14000000;
   bus.add_device(rtc_addr, rtc.get());
   bus.add_device(uart_addr, uart.get());
 

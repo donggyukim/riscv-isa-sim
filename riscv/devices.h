@@ -49,8 +49,11 @@ class rtc_t : public abstract_device_t {
 
 class uart_dev_t : public abstract_device_t {
  public:
-  uart_dev_t() { }
+  uart_dev_t() { print = true; }
   bool load(reg_t addr, size_t len, uint8_t* bytes);
   bool store(reg_t addr, size_t len, const uint8_t* bytes);
+  void set_print(bool value) { print = value; }
+ private:
+  bool print;
 };
 #endif

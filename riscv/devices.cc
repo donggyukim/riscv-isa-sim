@@ -40,7 +40,7 @@ bool uart_dev_t::store(reg_t addr, size_t len, const uint8_t* bytes)
 {
   switch(addr) {
     case 0: // UART_REG_TXFIFO
-      fputc((char)(bytes[0]), stdout);
+      if (print) fputc((char)(bytes[0]), stdout);
       return true;
     case 4: // UART_REG_RXFIFO
       return true;
