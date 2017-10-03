@@ -160,8 +160,8 @@ bool sim_t::mmio_store(reg_t addr, size_t len, const uint8_t* bytes)
 
 void sim_t::make_config_string()
 {
-  reg_t rtc_addr = EXT_IO_BASE;
-  reg_t uart_addr = EXT_IO_BASE + 0x14000000;
+  reg_t rtc_addr = 0x0200bff8L;
+  reg_t uart_addr = EXT_IO_BASE + 0x14000000L;
   bus.add_device(rtc_addr, rtc.get());
   bus.add_device(uart_addr, uart.get());
 
