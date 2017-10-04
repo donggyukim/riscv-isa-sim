@@ -296,8 +296,8 @@ int processor_t::paddr_bits()
 void processor_t::set_csr(int which, reg_t val)
 {
   val = zext_xlen(val);
-  reg_t delegable_ints = MIP_SSIP | MIP_STIP | MIP_SEIP | (1 << IRQ_COP);
-  reg_t all_ints = delegable_ints | MIP_MSIP | MIP_MTIP;
+  reg_t delegable_ints = MIP_SSIP | MIP_STIP | MIP_SEIP; // | (1 << IRQ_COP);
+  reg_t all_ints = delegable_ints | MIP_MSIP | MIP_MTIP | MIP_MEIP;
   switch (which)
   {
     case CSR_FFLAGS:
