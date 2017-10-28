@@ -46,6 +46,7 @@ private:
   std::unique_ptr<rom_device_t> boot_rom;
   std::unique_ptr<rtc_t> rtc;
   std::unique_ptr<uart_dev_t> uart;
+  std::unique_ptr<plic_t> plic;
   bus_t bus;
   debug_module_t debug_module;
 

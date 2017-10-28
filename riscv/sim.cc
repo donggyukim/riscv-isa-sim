@@ -51,6 +51,7 @@ sim_t::sim_t(const char* isa, size_t nprocs, size_t mem_mb, bool halted,
 
   rtc.reset(new rtc_t(procs));
   uart.reset(new uart_dev_t);
+  plic.reset(new plic_t(1));
   make_config_string();
 }
 
@@ -162,11 +163,13 @@ void sim_t::make_config_string()
 {
   reg_t rtc_addr = 0x0200bff8L;
   reg_t uart_addr = EXT_IO_BASE + 0x14000000L;
+  reg_t plic_addr = 0xc000000;
   bus.add_device(rtc_addr, rtc.get());
   bus.add_device(uart_addr, uart.get());
+  bus.add_device(plic_addr, plic.get());
 
   const int align = 0x1000;
-  reg_t cpu_addr = rtc_addr + ((rtc->size() - 1) / align + 1) * align;
+  reg_t cpu_addr = 0x2000000L;
   reg_t cpu_size = align;
 
   uint32_t reset_vec[8] = {
@@ -194,6 +197,11 @@ void sim_t::make_config_string()
         "  addr 0x" << uart_addr << ";\n"
         "  };\n"
         "};\n"
+        "plic {\n"
+        "  priority 0x" << plic_addr << ";\n"
+        "  pending 0x"  << (plic_addr + plic->pending_base) << ";\n"
+        "  ndevs " << plic->ndevs << ";\n"
+        "};\n"
         "ram {\n"
         "  0 {\n"
         "    addr 0x" << DRAM_BASE << ";\n"
@@ -208,6 +216,16 @@ void sim_t::make_config_string()
         "      isa " << procs[i]->isa_string << ";\n"
         "      timecmp 0x" << (rtc_addr + 8*(1+i)) << ";\n"
         "      ipi 0x" << cpu_addr << ";\n"
+        "      plic {\n"
+        "        m {\n"
+        "          ie 0x" << (plic_addr + plic->enable_base + 128*(2*i)) << ";\n"
+        "          thresh 0x" << (plic_addr + plic->hart_base + 0x1000*(2*i)) << ";\n"
+        "        };\n"
+        "        s {\n"
+        "          ie 0x" << (plic_addr + plic->enable_base + 128*(2*i+1)) << ";\n"
+        "          thresh 0x" << (plic_addr + plic->hart_base + 0x1000*(2*i+1)) << ";\n"
+        "        };\n"
+        "      };\n"
         "    };\n"
         "  };\n";
     bus.add_device(cpu_addr, procs[i]);
@@ -216,6 +234,9 @@ void sim_t::make_config_string()
   s <<  "};\n";
 
   config_string = s.str();
+
+  std::cout << config_string;
+
   rom.insert(rom.end(), config_string.begin(), config_string.end());
   rom.resize((rom.size() / align + 1) * align);
 

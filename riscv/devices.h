@@ -56,4 +56,17 @@ class uart_dev_t : public abstract_device_t {
  private:
   bool print;
 };
+
+class plic_t : public abstract_device_t {
+ public:
+  plic_t(size_t ndevs);
+  ~plic_t();
+  bool load(reg_t addr, size_t len, uint8_t* bytes);
+  bool store(reg_t addr, size_t len, const uint8_t* bytes);
+  size_t const priority_base;
+  size_t const pending_base;
+  size_t const enable_base;
+  size_t const hart_base;
+  size_t const ndevs;
+};
 #endif

@@ -54,3 +54,25 @@ bool uart_dev_t::store(reg_t addr, size_t len, const uint8_t* bytes)
       return false;
   }
 }
+
+plic_t::plic_t(size_t ndevs):
+  priority_base(0x0),
+  pending_base(0x1000),
+  enable_base(0x2000),
+  hart_base(0x200000),
+  ndevs(ndevs)
+{
+}
+
+plic_t::~plic_t() {
+}
+
+bool plic_t::load(reg_t addr, size_t len, uint8_t* bytes)
+{
+  return true;
+}
+
+bool plic_t::store(reg_t addr, size_t len, const uint8_t* bytes)
+{
+  return true;
+}
