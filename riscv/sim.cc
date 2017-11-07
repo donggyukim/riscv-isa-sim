@@ -6,6 +6,7 @@
 #include <map>
 #include <iostream>
 #include <sstream>
+#include <fstream>
 #include <climits>
 #include <cstdlib>
 #include <cassert>
@@ -111,6 +112,27 @@ void sim_t::step(size_t n)
       wait();
     }
   }
+}
+
+void sim_t::load_mem(const char* fname) {
+  char* m = (char*)mem;
+  std::ifstream in(fname);
+  if (!in)
+  {
+    std::cerr << "could not open " << fname << std::endl;
+    exit(-1);
+  }
+
+  fprintf(stdout, "[spike] start loadmem\n");
+  std::string line;
+  while (std::getline(in, line))
+  {
+    #define parse_nibble(c) ((c) >= 'a' ? (c)-'a'+10 : (c)-'0')
+    for (ssize_t i = line.length()-2, j = 0; i >= 0; i -= 2, j++)
+      m[j] = (parse_nibble(line[i]) << 4) | parse_nibble(line[i+1]);
+    m += line.length()/2;
+  }
+  fprintf(stdout, "[spike] finish loadmem\n");
 }
 
 void sim_t::set_debug(bool value)

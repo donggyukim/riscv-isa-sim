@@ -36,7 +36,7 @@ public:
   processor_t* current_core() { return procs[current_proc]; }
 
   void step(size_t n); // step through simulation
-
+  void load_mem(const char* fname);
 private:
   char* mem; // main memory
   size_t memsz; // memory size in bytes
