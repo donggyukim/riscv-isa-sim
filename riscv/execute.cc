@@ -99,14 +99,14 @@ void processor_t::step(size_t n)
 
     try
     {
-      if (!lockstep) {
+      if (unlikely(!lockstep)) {
         take_interrupt();
-      } else if (state.interrupt) {
+      } else if (unlikely(state.interrupt)) {
         state.interrupt = false;
         raise_interrupt(state.interrupt_cause);
       }
 
-      if (unlikely(slow_path()))
+      if (likely(lockstep) || unlikely(slow_path()))
       {
         while (instret < n)
         {

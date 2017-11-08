@@ -137,6 +137,7 @@ void processor_t::set_debug(bool value)
 void processor_t::set_lockstep(bool value)
 {
   lockstep = value;
+  mmu->set_lockstep(value);
 }
 
 void processor_t::set_histogram(bool value)

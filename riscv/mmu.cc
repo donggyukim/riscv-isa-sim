@@ -231,3 +231,14 @@ void mmu_t::register_memtracer(memtracer_t* t)
   flush_tlb();
   tracer.hook(t);
 }
+
+void mmu_t::set_permission(size_t addr, reg_t tag, reg_t meta, tlb_type_t tpe) {
+  tlb_t* tlb = tpe == ITLB ? &itlb : &dtlb;
+  tlb->tags[tag] = addr;
+  tlb->meta[addr] = meta;
+}
+
+void mmu_t::flush_permission() {
+  itlb.tags.clear();
+  dtlb.tags.clear();
+}
