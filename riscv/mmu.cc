@@ -234,11 +234,22 @@ void mmu_t::register_memtracer(memtracer_t* t)
 
 void mmu_t::set_permission(size_t addr, reg_t tag, reg_t meta, tlb_type_t tpe) {
   tlb_t* tlb = tpe == ITLB ? &itlb : &dtlb;
-  tlb->tags[tag] = addr;
+  reg_t old_tag = tlb->tags[addr];
+  auto it = tlb->tag_map.find(old_tag);
+  if (it != tlb->tag_map.end()) {
+    tlb->tag_map.erase(it);
+  }
+
   tlb->meta[addr] = meta;
+  tlb->tags[addr] = tag;
+  tlb->tag_map[tag] = addr;
 }
 
 void mmu_t::flush_permission() {
-  itlb.tags.clear();
-  dtlb.tags.clear();
+  itlb.tag_map.clear();
+  dtlb.tag_map.clear();
+  std::fill(itlb.meta.begin(), itlb.meta.end(), 0);
+  std::fill(dtlb.meta.begin(), dtlb.meta.end(), 0);
+  std::fill(itlb.tags.begin(), itlb.tags.end(), -1ULL);
+  std::fill(dtlb.tags.begin(), dtlb.tags.end(), -1ULL);
 }

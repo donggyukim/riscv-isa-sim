@@ -47,22 +47,16 @@ class trigger_matched_t
 
 // Dongggyu: TLB models
 struct tlb_t {
-  std::unordered_map<reg_t, size_t> tags;
   std::array<reg_t, 256> meta;
+  std::array<reg_t, 256> tags;
+  std::unordered_map<reg_t, size_t> tag_map;
+  tlb_t() {
+    std::fill(meta.begin(), meta.end(), 0);
+    std::fill(tags.begin(), tags.end(), -1ULL);
+  }
 };
 
 enum tlb_type_t { ITLB, DTLB };
-
-class tlb_miss_t
-{
- public:
-  tlb_miss_t(reg_t tag, tlb_type_t tpe): _tag(tag), _tpe(tpe) {}
-  reg_t tag() { return _tag; }
-  tlb_type_t tpe() { return _tpe; }
- private: 
-  reg_t _tag;
-  tlb_type_t _tpe;
-};
 
 // this class implements a processor's port into the virtual memory system.
 // an MMU and instruction cache are maintained for simulator performance.
@@ -265,7 +259,7 @@ private:
       mode = PRV_M;
     if (mode == PRV_M) return;
 
-    bool supervisor = proc->state.prv == PRV_S;
+    bool supervisor = mode == PRV_S;
     bool pum = get_field(proc->state.mstatus, MSTATUS_PUM);
     bool mxr = get_field(proc->state.mstatus, MSTATUS_MXR);
     tlb_t* tlb = (type == FETCH) ? &itlb : &dtlb;
@@ -275,10 +269,9 @@ private:
       case VM_SV39: tag &= ((1ULL << 27) - 1);
       case VM_SV48: tag &= ((1ULL << 36) - 1);
     }
-    auto match = tlb->tags.find(tag);
-    if (match == tlb->tags.end()) {
-      throw tlb_miss_t(tag, type == FETCH ? ITLB : DTLB);
-    }
+    auto match = tlb->tag_map.find(tag);
+    if (match == tlb->tag_map.end()) return;
+
     size_t addr = match->second;
     reg_t meta = tlb->meta[addr];
     bool no_priv = (meta & PTE_U) ? supervisor && pum : !supervisor;
@@ -287,28 +280,29 @@ private:
       case FETCH: {
         bool xcpt_if = no_priv || no_valid ||
           !(meta & PTE_X);
-        if (xcpt_if)
+        if (xcpt_if) {
           throw trap_instruction_access_fault(vaddr);
+        }
         break;
       }
       case LOAD: {
         bool xcpt_ld = no_priv || no_valid ||
           (!(meta & PTE_R) && !(mxr && (meta & PTE_X)));
-        if (xcpt_ld)
+        if (xcpt_ld) {
           throw trap_load_access_fault(vaddr);
+        }
         break;
       }
       case STORE: {
         // miss if dirty is off
         bool miss = !no_priv && !no_valid &&
           (meta & PTE_W) && !(meta & PTE_D);
-        if (miss) {
-          throw tlb_miss_t(tag, DTLB);
-        }
+        if (miss) return;
         bool xcpt_st = no_priv || no_valid ||
           (!((meta & PTE_R) && (meta & PTE_W)));
-        if (xcpt_st)
+        if (xcpt_st) {
           throw trap_store_access_fault(vaddr);
+        }
         break;
       }
     }
