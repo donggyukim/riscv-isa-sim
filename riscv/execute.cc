@@ -8,31 +8,31 @@
 
 static void commit_log_stash_privilege(state_t* state)
 {
-// #ifdef RISCV_ENABLE_COMMITLOG
+#ifdef RISCV_ENABLE_COMMITLOG
   state->last_inst_priv = state->prv;
-// #endif
+#endif
+}
+
+static uint64_t mask(insn_t insn) {
+  return (insn.length() == 8 ? uint64_t(0) : (uint64_t(1) << (insn.length() * 8))) - 1;
 }
 
 static void commit_log_print_insn(state_t* state, reg_t pc, insn_t insn)
 {
-  uint64_t mask = (insn.length() == 8 ? uint64_t(0) : (uint64_t(1) << (insn.length() * 8))) - 1;
 #ifdef RISCV_ENABLE_COMMITLOG
   int32_t priv = state->last_inst_priv;
   if (state->log_reg_write.addr) {
     fprintf(stderr, "%1d 0x%016" PRIx64 " (0x%08" PRIx64 ") %c%2" PRIu64 " 0x%016" PRIx64 "\n",
             priv,
             pc,
-            insn.bits() & mask,
+            insn.bits() & mask(insn),
             state->log_reg_write.addr & 1 ? 'f' : 'x',
             state->log_reg_write.addr >> 1,
             state->log_reg_write.data);
   } else {
-    fprintf(stderr, "%1d 0x%016" PRIx64 " (0x%08" PRIx64 ")\n", priv, pc, insn.bits() & mask);
+    fprintf(stderr, "%1d 0x%016" PRIx64 " (0x%08" PRIx64 ")\n", priv, pc, insn.bits() & mask(insn));
   }
   state->log_reg_write.addr = 0;
-#else
-  state->log_reg_pc   = pc;
-  state->log_reg_insn = insn.bits() & mask;
 #endif
 }
 
@@ -49,10 +49,14 @@ inline void processor_t::update_histogram(reg_t pc)
 static reg_t execute_insn(processor_t* p, reg_t pc, insn_fetch_t fetch)
 {
   commit_log_stash_privilege(p->get_state());
+  p->get_commit_log()->prv = p->get_state()->prv;
   reg_t npc = fetch.func(p, fetch.insn, pc);
   if (!invalid_pc(npc)) {
     commit_log_print_insn(p->get_state(), pc, fetch.insn);
     p->update_histogram(pc);
+    p->get_commit_log()->pc = pc; 
+    p->get_commit_log()->insn = fetch.insn.bits() & mask(fetch.insn);
+    p->push_commit_log();
   }
   return npc;
 }
@@ -97,16 +101,29 @@ void processor_t::step(size_t n)
        instret++; \
      }
 
+    #define check_commit_log() \
+     switch(last_commit.pc) { \
+       case 0x80003b3cL: /* time */ \
+       case 0x800008b4L: /* uart[UART_REG_RXFIFO] */ \
+         throw 0; \
+         break; \
+       default: \
+         if ((last_commit.insn & 0x7f) == 0x2f) { \
+           throw 0; \
+         } \
+         break; \
+     }
+
     try
     {
-      if (unlikely(!lockstep)) {
+      if (unlikely(!timewarp)) {
         take_interrupt();
       } else if (unlikely(state.interrupt)) {
         state.interrupt = false;
         raise_interrupt(state.interrupt_cause);
       }
 
-      if (likely(lockstep) || unlikely(slow_path()))
+      if (unlikely(slow_path()))
       {
         while (instret < n)
         {
@@ -121,6 +138,9 @@ void processor_t::step(size_t n)
           bool serialize_before = (pc == PC_SERIALIZE_BEFORE);
 
           advance_pc();
+          if (timewarp) {
+            check_commit_log();
+          }
 
           if (unlikely(state.single_step == state.STEP_STEPPED) && !serialize_before) {
             state.single_step = state.STEP_NONE;
@@ -185,25 +205,33 @@ void processor_t::step(size_t n)
         }
 
         advance_pc();
+        if (timewarp) {
+          check_commit_log();
+        }
         continue;
 
 miss:
         advance_pc();
+        if (timewarp) {
+          check_commit_log();
+        }
         // refill I$ if it looks like there wasn't a taken branch
         if (pc > (ic_entry-1)->tag && pc <= (ic_entry-1)->tag + MAX_INSN_LENGTH)
           _mmu->refill_icache(pc, ic_entry);
       }
     }
+    catch(int e)
+    {
+      if (e == 0) n = instret;
+    }
     catch(trap_t& t)
     {
       take_trap(t, pc);
       n = instret;
-
       if (unlikely(state.single_step == state.STEP_STEPPED)) {
         state.single_step = state.STEP_NONE;
         enter_debug_mode(DCSR_CAUSE_STEP);
       }
-      if (lockstep) step(1);
     }
     catch (trigger_matched_t& t)
     {
@@ -216,6 +244,9 @@ miss:
         insn_fetch_t fetch = mmu->load_insn(pc);
         pc = execute_insn(this, pc, fetch);
         advance_pc();
+        if (timewarp) {
+          check_commit_log();
+        }
 
         delete mmu->matched_trigger;
         mmu->matched_trigger = NULL;
@@ -234,7 +265,82 @@ miss:
       }
     }
 
+    timestamp += instret;
     state.minstret += instret;
     n -= instret;
   }
+}
+
+// Time Warp
+void processor_t::event(message_t& msg) {
+  static size_t cnt = 0;
+
+  if (cnt >= 20) {
+    // collect_fossils(msg.timestamp);
+    cnt = 0;
+  }
+
+  bool flush_commit_logs = false;
+  if (this->timestamp > msg.timestamp) {
+    rollback(msg.timestamp);
+    flush_commit_logs = true;
+  } else if (this->timestamp < msg.timestamp) {
+    snapshot(this->timestamp);
+    cnt++;
+  }
+
+  step(msg.timestamp - this->timestamp);
+
+  state.interrupt = msg.int_cause < ((reg_t)(-1));
+  state.interrupt_cause = msg.int_cause;
+
+  if (msg.reg_addr) {
+    if (msg.reg_addr & 0x1)
+      state.FPR.write(msg.reg_addr >> 1, msg.reg_data);
+    else
+      state.XPR.write(msg.reg_addr >> 1, msg.reg_data);
+  }
+
+  if (msg.tlb_addr < ((size_t)(-1ULL))) {
+    mmu->set_permission(msg.tlb_addr, msg.tlb_tag, msg.tlb_meta, msg.tlb_tpe);
+  }
+
+  if (flush_commit_logs) { 
+    std::queue<commit_log_t> empty;
+    std::swap(commit_logs, empty);
+  }
+}
+
+void processor_t::collect_fossils(uint64_t timestamp) {
+  // Global Virtual Time
+  // It's safe to deallocate checkpoints older than this
+  uint64_t gvt = std::min(this->timestamp, timestamp);
+  ssize_t i = states.size() - 1;
+  for ( ; i >= 0 ; i--) {
+    if (states[i].first < gvt) break;
+    free(states[i].second);
+  }
+  states.erase(states.begin(), states.begin() + i + 1);
+  mmu->collect_fossils(gvt);
+}
+
+void processor_t::snapshot(uint64_t timestamp) {
+  state_t *snap = (state_t*)malloc(sizeof(state_t));
+  memcpy(snap, &state, sizeof(state_t));
+  states.emplace_back(timestamp, snap);
+  mmu->snapshot(timestamp);
+}
+
+void processor_t::rollback(uint64_t timestamp) {
+  auto s = states.end() - 1;
+  for ( ; s != states.begin() ; s--) {
+    if (s->first <= timestamp) break;
+  }
+  memcpy(&state, s->second, sizeof(state_t));
+  for (auto it = s + 1 ; it != states.end() ; it++) {
+    free(it->second);
+  }
+  states.erase(s + 1, states.end());
+  mmu->rollback(s->first);
+  this->timestamp = s->first;
 }

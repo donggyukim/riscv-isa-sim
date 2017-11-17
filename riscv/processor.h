@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <queue>
+#include <deque>
 
 class processor_t;
 class mmu_t;
@@ -134,16 +136,34 @@ struct state_t
 
   reg_t load_reservation;
 
-// #ifdef RISCV_ENABLE_COMMITLOG
+#ifdef RISCV_ENABLE_COMMITLOG
   commit_log_reg_t log_reg_write;
   reg_t last_inst_priv;
-// #endif
-  reg_t log_reg_pc;
-  reg_t log_reg_insn;
+#endif
 
-  // For locksteps
+  // For timewarp
   bool interrupt;
   reg_t interrupt_cause;
+};
+
+// For Time Warp
+struct message_t {
+  uint64_t timestamp;
+  reg_t int_cause;
+  reg_t reg_addr;
+  reg_t reg_data;
+  size_t tlb_addr;
+  reg_t tlb_tag;
+  reg_t tlb_meta;
+  uint8_t tlb_tpe;
+};
+  
+struct commit_log_t {
+  reg_t prv;
+  reg_t pc;
+  reg_t insn;
+  reg_t addr;
+  reg_t data;
 };
 
 typedef enum {
@@ -169,7 +189,7 @@ public:
   ~processor_t();
 
   void set_debug(bool value);
-  void set_lockstep(bool value);
+  void set_timewarp(bool value);
   void set_histogram(bool value);
   void reset();
   void step(size_t n); // run for n cycles
@@ -283,6 +303,19 @@ public:
 
   void trigger_updated();
 
+  void push_commit_log() {
+    commit_logs.push(last_commit);
+    last_commit.addr = 0;
+  }
+  commit_log_t* get_commit_log() {
+    return &last_commit;
+  }
+  std::queue<commit_log_t>& get_commit_log_queue() {
+    return commit_logs;
+  }
+  uint64_t get_timestamp() const { return timestamp; }
+  void event(message_t& msg);
+
 private:
   sim_t* sim;
   mmu_t* mmu; // main memory is always accessed via the mmu
@@ -295,7 +328,6 @@ private:
   reg_t isa;
   reg_t max_isa;
   std::string isa_string;
-  bool lockstep;
   bool histogram_enabled;
   bool halt_on_reset;
 
@@ -322,6 +354,19 @@ private:
   void build_opcode_map();
   void register_base_instructions();
   insn_func_t decode_insn(insn_t insn);
+
+  // Time Warp
+  bool timewarp;
+  uint64_t timestamp;
+  // For rollback
+  std::deque<std::pair<uint64_t, state_t*>> states;
+
+  std::queue<commit_log_t> commit_logs;
+  commit_log_t last_commit;
+
+  void snapshot(uint64_t timestamp);
+  void rollback(uint64_t timestamp);
+  void collect_fossils(uint64_t timestamp);
 };
 
 reg_t illegal_instruction(processor_t* p, insn_t insn, reg_t pc);

@@ -31,6 +31,7 @@ processor_t::processor_t(const char* isa, sim_t* sim, uint32_t id,
   disassembler = new disassembler_t(max_xlen);
 
   reset();
+  timestamp = 0;
 }
 
 processor_t::~processor_t()
@@ -123,7 +124,7 @@ void state_t::reset()
   tselect = 0;
   for (unsigned int i = 0; i < num_triggers; i++)
     mcontrol[i].type = 2;
-  // for locksteps
+  // for timewarps
   interrupt = false;
 }
 
@@ -134,10 +135,11 @@ void processor_t::set_debug(bool value)
     ext->set_debug(value);
 }
 
-void processor_t::set_lockstep(bool value)
+void processor_t::set_timewarp(bool value)
 {
-  lockstep = value;
-  mmu->set_lockstep(value);
+  timewarp = value;
+  timestamp = 0;
+  mmu->set_timewarp(value);
 }
 
 void processor_t::set_histogram(bool value)

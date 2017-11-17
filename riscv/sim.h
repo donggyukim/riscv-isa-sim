@@ -27,7 +27,7 @@ public:
   int run();
   void set_debug(bool value);
   void set_log(bool value);
-  void set_lockstep(bool value);
+  void set_timewarp(bool value);
   void set_histogram(bool value);
   void set_procs_debug(bool value);
   void set_gdbserver(gdbserver_t* gdbserver) { this->gdbserver = gdbserver; }

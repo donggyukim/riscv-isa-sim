@@ -3,6 +3,7 @@
 #include "mmu.h"
 #include "sim.h"
 #include "processor.h"
+#include <cassert>
 
 mmu_t::mmu_t(sim_t* sim, processor_t* proc)
  : sim(sim), proc(proc),
@@ -133,6 +134,12 @@ void mmu_t::store_slow_path(reg_t addr, reg_t len, const uint8_t* bytes)
   }
 
   if (sim->addr_is_mem(paddr)) {
+    if (timewarp) {
+      // mem trace
+      reg_t data;
+      memcpy(&data, sim->addr_to_mem(paddr), len);
+      record(len, paddr, data);
+    }
     memcpy(sim->addr_to_mem(paddr), bytes, len);
     if (tracer.interested_in_range(paddr, paddr + PGSIZE, STORE))
       tracer.trace(paddr, len, STORE);
@@ -232,8 +239,8 @@ void mmu_t::register_memtracer(memtracer_t* t)
   tracer.hook(t);
 }
 
-void mmu_t::set_permission(size_t addr, reg_t tag, reg_t meta, tlb_type_t tpe) {
-  tlb_t* tlb = tpe == ITLB ? &itlb : &dtlb;
+void mmu_t::set_permission(size_t addr, reg_t tag, reg_t meta, uint8_t tpe) {
+  tlb_t* tlb = ((tlb_type_t)tpe) == ITLB ? &itlb : &dtlb;
   reg_t old_tag = tlb->tags[addr];
   auto it = tlb->tag_map.find(old_tag);
   if (it != tlb->tag_map.end()) {
@@ -252,4 +259,55 @@ void mmu_t::flush_permission() {
   std::fill(dtlb.meta.begin(), dtlb.meta.end(), 0);
   std::fill(itlb.tags.begin(), itlb.tags.end(), -1ULL);
   std::fill(dtlb.tags.begin(), dtlb.tags.end(), -1ULL);
+}
+
+// Time Warp
+void mmu_t::record(size_t len, reg_t addr, reg_t data) {
+  trace_clks.push_back(timestamp());
+  traces.emplace_back(len, addr, data);
+}
+
+void mmu_t::snapshot(uint64_t timestamp) {
+  tlb_clks.push_back(timestamp);
+  itlbs.push_back(itlb);
+  dtlbs.push_back(dtlb);
+}
+
+void mmu_t::rollback(uint64_t timestamp) {
+  ssize_t i = trace_clks.size() - 1;
+  for ( ; i >= 0 ; i--) {
+    if (trace_clks[i] < timestamp) break;
+    auto trace = traces[i];
+    memcpy(sim->addr_to_mem(trace.addr), (uint8_t*)&trace.data, trace.len);
+  }
+  trace_clks.erase(trace_clks.begin() + i + 1, trace_clks.end());
+  traces.erase(traces.begin() + i + 1, traces.end());
+
+  for (i = tlb_clks.size() - 1 ; i > 0 ; i++) {
+    if (tlb_clks[i] <= timestamp) break;
+  }
+  itlb = itlbs[i];
+  dtlb = dtlbs[i];
+  tlb_clks.erase(tlb_clks.begin() + i + 1, tlb_clks.end());
+  itlbs.erase(itlbs.begin() + i + 1, itlbs.end());
+  dtlbs.erase(dtlbs.begin() + i + 1, dtlbs.end());
+  flush_tlb();
+}
+
+void mmu_t::collect_fossils(uint64_t gvt) {
+  ssize_t i = trace_clks.size() - 1;
+  /* for ( ; i >= 0 ; i--) {
+    if (trace_clks[i] < gvt) break;
+  }
+  if (i >= 0) {
+    trace_clks.erase(trace_clks.begin(), trace_clks.begin() + i);
+    traces.erase(traces.begin(), traces.begin() + i);
+  } */
+
+  for (i = tlb_clks.size() - 1; i > 0 ; i--) {
+    if (tlb_clks[i] < gvt) break;
+  }
+  tlb_clks.erase(tlb_clks.begin(), tlb_clks.begin() + i + 1);
+  itlbs.erase(itlbs.begin(), itlbs.begin() + i + 1);
+  dtlbs.erase(dtlbs.begin(), dtlbs.begin() + i + 1);
 }

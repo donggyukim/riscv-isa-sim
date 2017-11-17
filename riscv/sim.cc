@@ -145,10 +145,10 @@ void sim_t::set_log(bool value)
   log = value;
 }
 
-void sim_t::set_lockstep(bool value)
+void sim_t::set_timewarp(bool value)
 {
   for (size_t i = 0; i < procs.size(); i++) {
-    procs[i]->set_lockstep(value);
+    procs[i]->set_timewarp(value);
   }
   uart->set_print(false);
 }

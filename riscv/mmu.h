@@ -14,6 +14,7 @@
 #include <vector>
 #include <array>
 #include <unordered_map>
+#include <deque>
 
 // virtual memory configuration
 #define PGSHIFT 12
@@ -54,6 +55,19 @@ struct tlb_t {
     std::fill(meta.begin(), meta.end(), 0);
     std::fill(tags.begin(), tags.end(), -1ULL);
   }
+  tlb_t(const tlb_t& tlb) {
+    copy(tlb);
+  }
+  tlb_t& operator=(const tlb_t& tlb) {
+    if (this != &tlb) copy(tlb);
+    return *this;
+  }
+private:
+  void copy(const tlb_t& tlb) {
+    std::copy(tlb.meta.begin(), tlb.meta.end(), meta.begin());
+    std::copy(tlb.tags.begin(), tlb.tags.end(), tags.begin());
+    tag_map = tlb.tag_map;
+  }
 };
 
 enum tlb_type_t { ITLB, DTLB };
@@ -72,7 +86,7 @@ public:
       if (addr & (sizeof(type##_t)-1)) \
         throw trap_load_address_misaligned(addr); \
       reg_t vpn = addr >> PGSHIFT; \
-      if (likely(lockstep)) check_permission(addr, LOAD); \
+      if (likely(timewarp)) check_permission(addr, LOAD); \
       if (likely(tlb_load_tag[vpn % TLB_ENTRIES] == vpn)) \
         return *(type##_t*)(tlb_data[vpn % TLB_ENTRIES] + addr); \
       if (unlikely(tlb_load_tag[vpn % TLB_ENTRIES] == (vpn | TLB_CHECK_TRIGGERS))) { \
@@ -107,16 +121,22 @@ public:
       if (addr & (sizeof(type##_t)-1)) \
         throw trap_store_address_misaligned(addr); \
       reg_t vpn = addr >> PGSHIFT; \
-      if (likely(lockstep)) check_permission(addr, STORE); \
-      if (likely(tlb_store_tag[vpn % TLB_ENTRIES] == vpn)) \
-        *(type##_t*)(tlb_data[vpn % TLB_ENTRIES] + addr) = val; \
-      else if (unlikely(tlb_store_tag[vpn % TLB_ENTRIES] == (vpn | TLB_CHECK_TRIGGERS))) { \
+      if (likely(timewarp)) check_permission(addr, STORE); \
+      if (likely(tlb_store_tag[vpn % TLB_ENTRIES] == vpn)) { \
+        char* data = tlb_data[vpn % TLB_ENTRIES] + addr; \
+	if (timewarp) \
+          record(sizeof(type##_t), sim->mem_to_addr(data), *(type##_t*)(data)); \
+        *(type##_t*)(data) = val; \
+      } else if (unlikely(tlb_store_tag[vpn % TLB_ENTRIES] == (vpn | TLB_CHECK_TRIGGERS))) { \
         if (!matched_trigger) { \
           matched_trigger = trigger_exception(OPERATION_STORE, addr, val); \
           if (matched_trigger) \
             throw *matched_trigger; \
         } \
-        *(type##_t*)(tlb_data[vpn % TLB_ENTRIES] + addr) = val; \
+        char* data = tlb_data[vpn % TLB_ENTRIES] + addr; \
+	if (timewarp) \
+          record(sizeof(type##_t), sim->mem_to_addr(data), *(type##_t*)(data)); \
+        *(type##_t*)(data) = val; \
       } \
       else \
         store_slow_path(addr, sizeof(type##_t), (const uint8_t*)&val); \
@@ -207,10 +227,10 @@ public:
   void register_memtracer(memtracer_t*);
 
   // By Donggyu
-  void set_lockstep(bool value) {
-    lockstep = value;
+  void set_timewarp(bool value) {
+    timewarp = value;
   }
-  void set_permission(size_t addr, reg_t tag, reg_t meta, tlb_type_t tpe);
+  void set_permission(size_t addr, reg_t tag, reg_t meta, uint8_t tpe);
   void flush_permission();
 
 private:
@@ -220,7 +240,6 @@ private:
   uint16_t fetch_temp;
 
   // By Donggyu
-  bool lockstep;
   tlb_t itlb, dtlb;
 
   // implement an instruction cache for simulator performance
@@ -250,6 +269,7 @@ private:
   reg_t translate(reg_t addr, access_type type);
 
   inline void check_permission(reg_t vaddr, access_type type) {
+return;
     reg_t mode = proc->state.prv;
     if (type != FETCH) {
       if (!proc->state.dcsr.cause && get_field(proc->state.mstatus, MSTATUS_MPRV))
@@ -311,7 +331,7 @@ private:
   // ITLB lookup
   inline const uint16_t* translate_insn_addr(reg_t addr) {
     reg_t vpn = addr >> PGSHIFT;
-    if (likely(lockstep)) check_permission(addr, FETCH);
+    if (likely(timewarp)) check_permission(addr, FETCH);
     if (likely(tlb_insn_tag[vpn % TLB_ENTRIES] == vpn))
       return (uint16_t*)(tlb_data[vpn % TLB_ENTRIES] + addr);
     if (unlikely(tlb_insn_tag[vpn % TLB_ENTRIES] == (vpn | TLB_CHECK_TRIGGERS))) {
@@ -346,6 +366,27 @@ private:
   trigger_matched_t *matched_trigger;
 
   friend class processor_t;
+
+  // Time Warp
+  bool timewarp;
+  struct trace_t {
+    trace_t(size_t len, reg_t addr, reg_t data):
+      len(len), addr(addr), data(data) { }
+    size_t len;
+    reg_t addr;
+    reg_t data;
+  };
+  std::deque<uint64_t> tlb_clks;
+  std::deque<tlb_t> itlbs;
+  std::deque<tlb_t> dtlbs;
+  std::deque<uint64_t> trace_clks;
+  std::deque<trace_t> traces;
+
+  uint64_t timestamp() { return proc->timestamp; }
+  void record(size_t len, reg_t addr, reg_t data);
+  void snapshot(uint64_t timestamp);
+  void rollback(uint64_t timestamp);
+  void collect_fossils(uint64_t gvt);
 };
 
 #endif
