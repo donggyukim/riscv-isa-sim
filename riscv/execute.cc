@@ -106,7 +106,15 @@ void processor_t::step(size_t n)
         raise_interrupt(state.interrupt_cause);
       }
 
-      if (likely(lockstep) || unlikely(slow_path()))
+      if (likely(lockstep))
+      {
+        while (instret < n) {
+          auto fetch = mmu->access_icache(pc)->data;
+          pc = execute_insn(this, pc, fetch);
+          advance_pc();
+        }
+      }
+      else if (unlikely(slow_path()))
       {
         while (instret < n)
         {
